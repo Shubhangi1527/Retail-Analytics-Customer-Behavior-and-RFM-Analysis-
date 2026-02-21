@@ -1,0 +1,221 @@
+---Stagging Table(Raw Data)---)
+
+create table STG_SALES_RAW(Order_Id number,Order_Date date,Customer_ID number,Country varchar(50),City varchar(50),State varchar(50),Postal_Code number,Region varchar(50),Category varchar(50),Sub_Category varchar(50),Product_Id varchar(50),Price decimal(10,2),Quantity number,Channel varchar(50)
+);
+describe STG_SALES_RAW
+select * from STG_SALES_RAW;
+
+---Fact Table(Clean Data)---
+
+create table fact_sales_clean as select Order_Id,Order_Date,Customer_ID,State,Country,City,Postal_Code,Region,Category,Sub_Category,Product_Id,Price,Quantity,Channel from STG_SALES_RAW 
+where Order_Date is not null and Order_Id is not null and Customer_ID is not null and Quantity>0 and Price>0;
+
+select * from fact_sales_clean
+
+---Dimension Tables---
+
+create table dim_customer (
+customer_key number,
+Customer_ID  number not null,
+Region varchar(50),
+constraint pk_dim_customer primary key (customer_key),
+constraint uk_dim_customer unique (Customer_ID));
+
+select * from dim_customer    
+    
+create table dim_product(
+product_key  number,
+Product_Id varchar(50)not null,
+Category varchar(50),
+sub_Category varchar(50),
+constraint pk_dim_product primary key(product_key),
+constraint uk_dim_product unique(Product_Id));
+
+select * from dim_product
+
+create table dim_date(
+date_key number primary key,
+full_date date not null,
+day number,
+month number,
+month_name varchar(50),
+quarter number,
+year number,
+constraint uk_dim_date unique(full_date));
+
+select * from dim_date
+
+create table dim_region (
+region_key number,
+Region varchar(50)not null,
+constraint pk_dim_region primary key(region_key),
+constraint uk_dim_region unique(Region));
+
+select * from dim_region
+
+---create sequence---    
+
+create sequence seq_dim_customer start with 1 increment by 1 nocache;
+create sequence seq_dim_product start with 1 increment by 1 nocache;
+create sequence seq_dim_region start with 1 increment by 1 nocache;
+
+---create trigger---
+
+create or replace trigger trg_dim_customer
+before insert on dim_customer
+for each row
+begin
+    if:new.customer_key is null then
+        select seq_dim_customer.nextval
+        into :new.customer_key
+        from dual;
+    end if;
+end;
+/
+
+create or replace trigger trg_dim_product
+before insert on dim_product
+for each row
+begin
+    if:new.product_key is null then
+        select seq_dim_product.nextval
+        into :new.product_key
+        from dual;
+    end if;
+end;
+/
+
+create or replace trigger  trg_dim_region
+before insert on dim_region
+for each row
+BEGIN
+    if:new.region_key is null then
+        select seq_dim_region.nextval
+        into:new.region_key
+        from dual;
+    end if;
+end;
+/
+
+
+---insert values into dimensions---
+
+insert into dim_customer (customer_id, region)
+select distinct customer_id, region
+from stg_sales_raw
+where customer_id is not null;
+
+select * from dim_customer
+
+insert into dim_product(product_id,category,sub_category)
+select distinct product_id,category,sub_category
+from stg_sales_raw
+where product_id is not null;
+
+select * from dim_product
+
+insert into dim_date (
+    date_key,full_date,day,month,month_name,quarter,year
+)
+select distinct
+    to_number(to_char(order_date,'YYYYMMDD')) as date_key,
+    order_date,
+    extract(day from order_date),
+    extract(month from order_date),
+    to_char(order_date,'Month'),
+    to_number(to_char(order_date,'Q')),
+    extract(year from order_date)
+from stg_sales_raw
+where order_date is not null;
+
+select * from dim_date
+
+insert into dim_region (region)
+select distinct region
+from stg_sales_raw
+where region is not null;
+
+select * from dim_region
+
+---Link Dimensions to Fact table(add keys to fact table)---
+
+alter table fact_sales_clean add customer_key number;
+alter table fact_sales_clean add product_key number;
+alter table fact_sales_clean add date_key number;
+alter table fact_sales_clean add region_key number;
+
+---update fact table with keys(update foreign key)---
+
+update fact_sales_clean f
+set customer_key = (
+    select c.customer_key
+    from dim_customer c
+    where c.customer_id = f.customer_id
+);
+
+update fact_sales_clean f
+set product_key = (
+    select p.product_key
+    from dim_product p
+    where p.product_id = f.product_id
+);
+
+update fact_sales_clean f
+set region_key = (
+    select r.region_key
+    from dim_region r
+    where r.region = f.region
+);
+
+update fact_sales_clean
+set date_key = to_number(to_char(order_date,'YYYYMMDD'));
+
+select * from fact_sales_clean
+
+---add foreign keys---
+
+alter table fact_sales_clean
+add constraint fk_fact_customer
+foreign key (customer_key) references dim_customer(customer_key);
+
+alter table fact_sales_clean
+add constraint fk_fact_product
+foreign key (product_key) references dim_product(product_key);
+
+alter table fact_sales_clean
+add constraint fk_fact_region
+foreign key (region_key) references dim_region(region_key);
+
+alter table fact_sales_clean
+add constraint fk_fact_date
+foreign key (date_key) references dim_date(date_key);
+
+select * from fact_sales_clean
+
+select Region,count(*)
+from fact_sales_clean
+group by Region;
+
+
+
+---After RFM Calculation on python---
+
+select * from CUSTOMER_RFM
+
+select count(*)from CUSTOMER_RFM;
+
+select *
+from CUSTOMER_RFM
+where "Segment" = 'At Risk';
+
+select "Segment", COUNT(*)
+from CUSTOMER_RFM
+group by "Segment";
+
+SELECT "Segment" FROM CUSTOMER_RFM;
+
+DESC CUSTOMER_RFM;
+
+select * from CUSTOMER_RFM
+
+
